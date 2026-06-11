@@ -6,7 +6,7 @@ from pymongo import MongoClient
 
 app = Flask(__name__)
 
-# 1. Secure Database Connection
+# Secure Database Connection
 MONGO_URI = "mongodb+srv://dbUser:ZI2OhyUIFgxAY6CR@cluster0.e96ydoo.mongodb.net/?appName=Cluster0"
 try:
     client = MongoClient(MONGO_URI)
@@ -22,19 +22,23 @@ def analyze():
     if not req_data or 'operation' not in req_data or 'data' not in req_data:
         return jsonify({"error": "Invalid input layout. Provide 'operation' and 'data'."}), 400
 
-    # THE FIX: Send the exact JSON payload directly to the C++ engine!
-    input_to_cpp = json.dumps(req_data) + "\n"
+    operation = req_data['operation']
+    input_data = req_data['data']
+
+    # THE FIX: Send data as command-line arguments (e.g., ./quant_engine zscore 100.0 102.0)
+    command_args = ['./quant_engine', operation] + [str(x) for x in input_data]
 
     try:
-        # 2. Run the compiled C++ Binary Engine
+        # Run the compiled C++ Binary Engine
         process = subprocess.Popen(
-            ['./quant_engine'],
-            stdin=subprocess.PIPE,
+            command_args,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True
         )
-        stdout, stderr = process.communicate(input=input_to_cpp, timeout=5)
+        
+        # Execute and grab the output (no longer piping stdin)
+        stdout, stderr = process.communicate(timeout=5)
 
         if process.returncode != 0:
             return jsonify({"error": "C++ Engine Error", "details": stdout or stderr}), 500
@@ -42,10 +46,10 @@ def analyze():
         # Parse output from C++ engine
         result = json.loads(stdout.strip())
 
-        # 3. Log results to MongoDB Atlas Database
+        # Log results to MongoDB Atlas Database
         log_document = {
-            "operation": req_data['operation'],
-            "input_data": req_data['data'],
+            "operation": operation,
+            "input_data": input_data,
             "output_result": result
         }
         try:
