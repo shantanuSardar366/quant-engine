@@ -1,45 +1,70 @@
-from flask import Flask, request, jsonify
+import os
 import subprocess
 import json
-import os
+from flask import Flask, request, jsonify
+from pymongo import MongoClient
 
 app = Flask(__name__)
 
+# 1. Secure Database Connection
+MONGO_URI = "mongodb+srv://dbUser:ZI2OhyUIFgxAY6CR@cluster0.e96ydoo.mongodb.net/?appName=Cluster0"
+try:
+    client = MongoClient(MONGO_URI)
+    db = client['quant_database']
+    logs_collection = db['calculation_logs']
+    print("Successfully connected to MongoDB Atlas!")
+except Exception as e:
+    print(f"MongoDB Connection Warning: {e}")
+
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    content = request.json
-    operation = content.get('operation')
-    data = content.get('data')
+    req_data = request.get_json()
+    if not req_data or 'operation' not in req_data or 'data' not in req_data:
+        return jsonify({"error": "Invalid input layout. Provide 'operation' and 'data'."}), 400
 
-    if not operation or not data:
-        return jsonify({"error": "Missing parameters"}), 400
+    operation = req_data['operation']
+    input_data = req_data['data']
 
-    # Get absolute path to the .exe file
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    exe_path = os.path.join(base_dir, 'quant_engine.exe')
+    # Convert numeric list to space-separated string for C++ process
+    data_str = " ".join(map(str, input_data))
+    input_to_cpp = f"{operation} {data_str}\n"
 
-    # Double check if the file actually exists in this folder
-    if not os.path.exists(exe_path):
-        return jsonify({
-            "error": f"quant_engine.exe not found in {base_dir}. Current files: {os.listdir(base_dir)}"
-        }), 404
-
-    # Fix for OneDrive: Build the command as a single string and wrap paths in quotes
-    data_str = " ".join(map(str, data))
-    cmd = f'"{exe_path}" {operation} {data_str}'
-    
     try:
-        # shell=True forces Windows to resolve OneDrive virtual paths correctly
-        result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
-        
-        # If C++ executed but returned an empty string or error
-        if not result.stdout.strip():
-            return jsonify({"error": "C++ engine returned no output", "stderr": result.stderr}), 500
-            
-        return jsonify(json.loads(result.stdout))
-        
+        # 2. Run the compiled C++ Binary Engine
+        process = subprocess.Popen(
+            ['./quant_engine'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        stdout, stderr = process.communicate(input=input_to_cpp, timeout=5)
+
+        if process.returncode != 0:
+            return jsonify({"error": "C++ Engine Execution Failure", "details": stderr}), 500
+
+        # Parse output from C++ engine
+        result = json.loads(stdout.strip())
+
+        # 3. Log results to MongoDB Atlas Database
+        log_document = {
+            "operation": operation,
+            "input_data": input_data,
+            "output_result": result,
+            "timestamp": os.getloadavg() # simple metric or omitted for speed
+        }
+        try:
+            logs_collection.insert_one(log_document)
+        except Exception as db_err:
+            print(f"Database logging failed: {db_err}")
+
+        return jsonify(result)
+
+    except subprocess.TimeoutExpired:
+        process.kill()
+        return jsonify({"error": "C++ processing operation timed out"}), 504
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=8080)
