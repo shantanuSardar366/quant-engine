@@ -7,7 +7,7 @@ from pymongo import MongoClient
 app = Flask(__name__)
 
 # Secure Database Connection
-MONGO_URI = "mongodb+srv://dbUser:ZI2OhyUIFgxAY6CR@cluster0.e96ydoo.mongodb.net/?appName=Cluster0"
+MONGO_URI = "mongodb+srv://sardarshantanu66_db_user:ZI2OhyUIFgxAY6CR@cluster0.e96ydoo.mongodb.net/?appName=Cluster0"
 try:
     client = MongoClient(MONGO_URI)
     db = client['quant_database']
