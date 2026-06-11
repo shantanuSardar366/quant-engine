@@ -27,7 +27,7 @@ def analyze():
 
     # Convert numeric list to space-separated string for C++ process
     data_str = " ".join(map(str, input_data))
-    input_to_cpp = f"{operation} {data_str}\n"
+    input_to_cpp = f"{operation} {len(input_data)} {data_str}\n"
 
     try:
         # 2. Run the compiled C++ Binary Engine
