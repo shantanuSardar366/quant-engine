@@ -41,7 +41,12 @@ def analyze():
         stdout, stderr = process.communicate(input=input_to_cpp, timeout=5)
 
         if process.returncode != 0:
-            return jsonify({"error": "C++ Engine Execution Failure", "details": stderr}), 500
+         return jsonify({
+             "error": "C++ Engine Execution Failure",
+             "stderr_log": stderr,
+             "stdout_log": stdout,
+             "data_sent_to_cpp": input_to_cpp
+         }), 500
 
         # Parse output from C++ engine
         result = json.loads(stdout.strip())
