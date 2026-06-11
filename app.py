@@ -22,12 +22,8 @@ def analyze():
     if not req_data or 'operation' not in req_data or 'data' not in req_data:
         return jsonify({"error": "Invalid input layout. Provide 'operation' and 'data'."}), 400
 
-    operation = req_data['operation']
-    input_data = req_data['data']
-
-    # Convert numeric list to space-separated string for C++ process
-    data_str = " ".join(map(str, input_data))
-    input_to_cpp = f"{operation} {len(input_data)} {data_str}\n"
+    # THE FIX: Send the exact JSON payload directly to the C++ engine!
+    input_to_cpp = json.dumps(req_data) + "\n"
 
     try:
         # 2. Run the compiled C++ Binary Engine
@@ -41,22 +37,16 @@ def analyze():
         stdout, stderr = process.communicate(input=input_to_cpp, timeout=5)
 
         if process.returncode != 0:
-         return jsonify({
-             "error": "C++ Engine Execution Failure",
-             "stderr_log": stderr,
-             "stdout_log": stdout,
-             "data_sent_to_cpp": input_to_cpp
-         }), 500
+            return jsonify({"error": "C++ Engine Error", "details": stdout or stderr}), 500
 
         # Parse output from C++ engine
         result = json.loads(stdout.strip())
 
         # 3. Log results to MongoDB Atlas Database
         log_document = {
-            "operation": operation,
-            "input_data": input_data,
-            "output_result": result,
-            "timestamp": os.getloadavg() # simple metric or omitted for speed
+            "operation": req_data['operation'],
+            "input_data": req_data['data'],
+            "output_result": result
         }
         try:
             logs_collection.insert_one(log_document)
@@ -67,7 +57,7 @@ def analyze():
 
     except subprocess.TimeoutExpired:
         process.kill()
-        return jsonify({"error": "C++ processing operation timed out"}), 504
+        return jsonify({"error": "C++ processing timed out"}), 504
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
